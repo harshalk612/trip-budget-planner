@@ -1,1 +1,1 @@
-# budget-trip-planner-usng-rshiny
+# budget-trip-planner-usng-R-Shiny
