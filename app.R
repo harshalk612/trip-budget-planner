@@ -5,7 +5,8 @@ library(htmltools)
 library(ggplot2)
 library(owmr)
 
-source("Final Project/ui.r")
-source("Final Project/app.r")
+source("expense_tracker.R")
+source("ui.R")
+source("server.R")
 
 shinyApp(ui, server)
