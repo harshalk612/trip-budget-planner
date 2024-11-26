@@ -1,8 +1,8 @@
-# ui.R
-
 library(shiny)
 library(shinydashboard)
 library(shinydashboardPlus)
+library(DT)
+library(leaflet)
 
 # Define the UI
 ui <- dashboardPage(
@@ -20,7 +20,8 @@ ui <- dashboardPage(
       id = "sidebarMenu",
       menuItem("Home", tabName = "home", icon = icon("home")),
       menuItem("Results", tabName = "results", icon = icon("chart-bar")),
-      menuItem("Insights", tabName = "insights", icon = icon("lightbulb"))
+      menuItem("Insights", tabName = "insights", icon = icon("lightbulb")),
+      menuItem("Hotels", tabName = "hotels", icon = icon("hotel")) # Adding Hotels tab
     )
   ),
   dashboardBody(
@@ -32,7 +33,6 @@ ui <- dashboardPage(
           column(
             width = 12, # Content width
             offset = 3, # Center the content by adding an offset
-            allign = 'centre',
             box(
               title = "Plan Your Trip",
               solidHeader = TRUE,
@@ -108,6 +108,27 @@ ui <- dashboardPage(
             solidHeader = TRUE,
             status = "info",
             p("Coming soon: Get detailed travel insights!")
+          )
+        )
+      ),
+      # Hotels Tab
+      tabItem(
+        tabName = "hotels",
+        fluidRow(
+          column(
+            width = 4,
+            box(
+              title = "Find Hotels",
+              solidHeader = TRUE,
+              p("Hotels will be searched using your travel destination."),
+              actionButton("update_hotels", "Search Hotels", class = "btn btn-primary")
+            )
+          ),
+          column(
+            width = 8,
+            leafletOutput("hotel_map", height = 400),
+            br(),
+            DT::dataTableOutput("hotel_table")
           )
         )
       )
