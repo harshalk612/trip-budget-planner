@@ -93,10 +93,10 @@ overview_section_server <- function(id, total_budget, expense_tracker_data, bigg
           NA
         })
         
-        if (is.na(temp) | is.na(description)) {
+        if (is.na(temp)) {
           return("Weather data not available")
         } else {
-          return(paste("Temperature:", temp, "°C", "|", "Condition:", description))
+          return(paste("Temperature:", temp, "°C", "|"))
         }
       } else {
         return("Weather data not available")
