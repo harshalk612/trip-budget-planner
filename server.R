@@ -1,114 +1,77 @@
-# Server for Overview Section
-overview_section_server <- function(id, total_budget, expense_tracker_data, biggest_spending_category, weather_data) {
-  moduleServer(id, function(input, output, session) {
-    
-    # Reactive for remaining budget
-    remaining_budget <- reactive({
-      total_budget() - expense_tracker_data()
-    })
-    
-    # Output for total budget and remaining budget
-    output$total_budget_display <- renderText({
-      paste("$", total_budget())
-    })
-    
-    output$remaining_budget_display <- renderText({
-      remaining <- remaining_budget()
-      if (remaining < 0) {
-        return("Out of Budget")
-      } else {
-        return(paste("$", remaining))
-      }
-    })
-    
-    # Output for biggest spending category
-    output$biggest_spending_display <- renderText({
-      biggest_spending_category() %||% "Not Submitted Yet"  # Show default message before clicking
-    })
-    
-    # Placeholder for Top Places to Visit
-    output$top_places_display <- renderText({
-      "Place A, Place B, Place C"  # Placeholder, can be updated dynamically
-    })
-    
-    # Output for Weather Forecast
-    output$weather_display <- renderText({
-      weather <- weather_data()
-      
-      if (!is.null(weather)) {
-        # Accessing specific weather details with error handling
-        temp <- tryCatch({
-          weather$main$temp
-        }, error = function(e) {
-          cat("Error in accessing temperature: ", e$message, "\n")
-          NA
-        })
-        
-        description <- tryCatch({
-          weather$weather[[1]]$description
-        }, error = function(e) {
-          cat("Error in accessing description: ", e$message, "\n")
-          NA
-        })
-        
-        if (is.na(temp)) {
-          return("Weather data not available")
-        } else {
-          return(paste("Temperature:", temp, "°C"))
-        }
-      } else {
-        return("Weather data not available")
-      }
-    })
-  })
-}
+# Load necessary libraries
+library(shiny)
+library(ggplot2)
 
-# Server function
+# Define the Server
 server <- function(input, output, session) {
-  
-  # Total budget input
-  total_budget <- reactive({
-    input$total_budget
-  })
-  
-  # Create a reactive value to store expenses
-  expenses <- reactiveVal(0)  # Initial expense value is 0
-  
-  # Reactive value to store biggest spending category
-  biggest_spending_category <- reactiveVal(NULL)  # Initial state is NULL
+  # Reactive value to store expenses
+  expenses <- reactiveVal(data.frame(Item = character(), Category = character(), Amount = numeric(), stringsAsFactors = FALSE))
   
   # Reactive value to store weather data
-  weather_data <- reactiveVal(NULL)  # Initial state is NULL
+  weather_data <- reactiveVal(NULL)
   
-  # Expense Tracker Module
+  # Classification logic for items
+  classify_item <- function(item) {
+    keywords <- list(
+      Food = c("pizza", "burger", "groceries", "coffee"),
+      Accommodation = c("hotel", "hostel", "stay", "rent"),
+      Travel = c("flight", "taxi", "bus", "train"),
+      Luxury = c("watch", "jewelry", "vacation", "designer")
+    )
+    for (category in names(keywords)) {
+      if (any(grepl(paste(keywords[[category]], collapse = "|"), tolower(item)))) {
+        return(category)
+      }
+    }
+    return("Other")
+  }
+  
+  # Submit new expense
   observeEvent(input$submit_expense, {
-    # Calculate total expenses upon button click
-    total_expenses <- input$food + input$transport + input$accommodation + input$activities
-    expenses(total_expenses)  # Update the stored expenses value
-    
-    # Determine biggest spending category
-    categories <- c("Food" = input$food, 
-                    "Transport" = input$transport, 
-                    "Accommodation" = input$accommodation, 
-                    "Activities" = input$activities)
-    
-    # Find the category with the highest expense
-    max_category <- names(categories)[which.max(categories)]
-    
-    # Update biggest spending category reactive value
-    biggest_spending_category(max_category)
+    if (input$item == "" || input$budget <= 0) {
+      showNotification("Please provide a valid item and budget.", type = "error")
+      return()
+    }
+    category <- classify_item(input$item)
+    new_expense <- data.frame(
+      Item = input$item,
+      Category = category,
+      Amount = input$budget,
+      stringsAsFactors = FALSE
+    )
+    updated_expenses <- rbind(expenses(), new_expense)
+    expenses(updated_expenses)
   })
   
-  # Overview Section Module
-  output$overview_section <- renderUI({
-    overview_section_ui("overview_section")
+  # Clear all expenses
+  observeEvent(input$clear_expenses, {
+    expenses(data.frame(Item = character(), Category = character(), Amount = numeric(), stringsAsFactors = FALSE))
+    showNotification("All expenses cleared!", type = "message")
   })
   
-  overview_section_server("overview_section", total_budget, expenses, biggest_spending_category, weather_data)
+  # Reactive for total expenses
+  total_expenses <- reactive({
+    sum(expenses()$Amount, na.rm = TRUE)
+  })
   
-  # Observe event for "Go to Results"
+  # Reactive for remaining budget
+  remaining_budget <- reactive({
+    input$total_budget - total_expenses()
+  })
+  
+  # Reactive for biggest spending category
+  biggest_spending_category <- reactive({
+    expense_data <- expenses()
+    if (nrow(expense_data) > 0) {
+      category_totals <- aggregate(Amount ~ Category, data = expense_data, sum)
+      category_totals$Category[which.max(category_totals$Amount)]
+    } else {
+      "None"
+    }
+  })
+  
+  # Handle "Go to Results" button
   observeEvent(input$goToResults, {
-    # Validate "Your Location" field
     if (grepl("[0-9]", input$location)) {
       showModal(
         modalDialog(
@@ -119,8 +82,6 @@ server <- function(input, output, session) {
       )
       return()
     }
-    
-    # Validate "Travel Destination" field
     if (grepl("[0-9]", input$destination)) {
       showModal(
         modalDialog(
@@ -131,29 +92,107 @@ server <- function(input, output, session) {
       )
       return()
     }
-    
-    # Fetch weather data based on destination using owmr
     weather_data_from_api <- tryCatch({
-      owmr::owmr_settings("109d734da4f858e9dca6534a23b73e2b")  # Ensure API key is correctly set
+      owmr::owmr_settings("109d734da4f858e9dca6534a23b73e2b") # Replace with your OpenWeatherMap API key
       owmr::get_current(input$destination, units = "metric")
     }, error = function(e) {
-      cat("Error fetching weather data:", e$message, "\n")  # Print error message for debugging
-      NULL  # Return NULL if there's an error
+      NULL
     })
-    
-    # Update weather data reactive value
-    if (!is.null(weather_data_from_api)) {
-      weather_data(weather_data_from_api)
-    } else {
-      weather_data(NULL)
-    }
-    
-    # Switch to the Results tab
+    weather_data(weather_data_from_api)
     updateTabItems(session, "sidebarMenu", selected = "results")
   })
   
-  # Observe event for "Go to Home"
-  observeEvent(input$goToHome, {
-    updateTabItems(session, "sidebarMenu", selected = "home")
+  # Overview Section Outputs
+  output$overview_section <- renderUI({
+    overview_section_ui("overview_section")
   })
+  
+  # Overview Section Outputs
+  # Display Total Budget
+  output$total_budget_display <- renderText({
+    if (is.null(input$total_budget) || input$total_budget <= 0) {
+      "No Budget Set"
+    } else {
+      paste("$", formatC(input$total_budget, format = "f", digits = 0, big.mark = ","))
+    }
+  })
+  
+  
+  # Display Total Expenses
+  output$total_expenses_display <- renderText({
+    total_exp <- sum(expenses()$Amount, na.rm = TRUE)
+    paste("$", formatC(total_exp, format = "f", digits = 0, big.mark = ","))
+  })
+  
+  
+  # Display Remaining Budget
+  output$remaining_budget_display <- renderText({
+    remaining <- input$total_budget - sum(expenses()$Amount, na.rm = TRUE)
+    if (remaining < 0) {
+      "Over Budget!"
+    } else {
+      paste("$", formatC(remaining, format = "f", digits = 0, big.mark = ","))
+    }
+  })
+  
+  
+  # Display Biggest Spending Category
+  output$biggest_spending_display <- renderText({
+    expense_data <- expenses()
+    if (nrow(expense_data) > 0) {
+      category_totals <- aggregate(Amount ~ Category, data = expense_data, sum)
+      category_totals$Category[which.max(category_totals$Amount)]
+    } else {
+      "No Expenses Yet"
+    }
+  })
+  
+  # Display Weather Forecast
+  output$weather_display <- renderText({
+    dest <- input$destination
+    if (is.null(dest) || dest == "") {
+      return("No destination set.")
+    }
+    weather <- weather_data()
+    if (!is.null(weather)) {
+      temp <- tryCatch({ weather$main$temp }, error = function(e) { NA })
+      description <- tryCatch({ weather$weather[[1]]$description }, error = function(e) { NA })
+      if (!is.na(temp)) {
+        paste(temp, "°C")
+      } else {
+        "Weather data unavailable"
+      }
+    } else {
+      "Weather data unavailable"
+    }
+  })
+  
+  
+  # Render Expense Table
+  output$expense_table <- renderTable({
+    expenses()
+  })
+  
+  # Render Pie Chart
+  output$expense_pie <- renderPlot({
+    expense_data <- expenses()
+    if (nrow(expense_data) > 0) {
+      expense_summary <- aggregate(Amount ~ Category, data = expense_data, sum)
+      ggplot(expense_summary, aes(x = "", y = Amount, fill = Category)) +
+        geom_bar(stat = "identity", width = 1) +
+        coord_polar("y", start = 0) +
+        theme_void() +
+        labs(title = "Expense Distribution")
+    }
+  })
+  
+  # Download Expenses
+  output$download <- downloadHandler(
+    filename = function() {
+      paste("expenses-", Sys.Date(), ".csv", sep = "")
+    },
+    content = function(file) {
+      write.csv(expenses(), file, row.names = FALSE)
+    }
+  )
 }

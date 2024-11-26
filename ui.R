@@ -1,37 +1,15 @@
-# UI function for the Expense Tracker module
-expense_tracker_ui <- function(id) {
-  ns <- NS(id)
-  tagList(
-    h4("Expense Tracker"),
-    numericInput(ns("food"), "Food", value = 0, min = 0),
-    numericInput(ns("transport"), "Transport", value = 0, min = 0),
-    numericInput(ns("accommodation"), "Accommodation", value = 0, min = 0),
-    numericInput(ns("activities"), "Activities", value = 0, min = 0),
-    actionButton(ns("submit_expense"), "Submit Expenses")
-  )
-}
+# ui.R
 
-# UI function for Overview Section
-overview_section_ui <- function(id) {
-  ns <- NS(id)
-  tagList(
-    wellPanel(
-      h4("Overview"),
-      p(strong("Total Budget:"), textOutput(ns("total_budget_display"))),
-      p(strong("Remaining Budget:"), textOutput(ns("remaining_budget_display"))),
-      p(strong("Biggest Spending Category:"), textOutput(ns("biggest_spending_display"))),
-      p(strong("Top Places to Visit:"), textOutput(ns("top_places_display"))),
-      p(strong("Weather Forecast:"), textOutput(ns("weather_display")))
-    )
-  )
-}
+library(shiny)
+library(shinydashboard)
+library(shinydashboardPlus)
 
 # Define the UI
 ui <- dashboardPage(
   dashboardHeader(
     title = span(
       icon("plane-departure"),
-      span("Trip Budget Planner", style = "margin-left: 10px; font-weight: bold") # Bold and larger title
+      span("Trip Budget Planner", style = "margin-left: 10px; font-weight: bold")
     ),
     titleWidth = 270
   ),
@@ -42,7 +20,8 @@ ui <- dashboardPage(
       id = "sidebarMenu",
       menuItem("Home", tabName = "home", icon = icon("home")),
       menuItem("Results", tabName = "results", icon = icon("chart-bar")),
-      menuItem("Insights", tabName = "insights", icon = icon("lightbulb"))
+      menuItem("Insights", tabName = "insights", icon = icon("lightbulb")),
+      menuItem("Expense Tracker", tabName = "expense_tracker", icon = icon("dollar-sign"))
     )
   ),
   dashboardBody(
@@ -53,55 +32,48 @@ ui <- dashboardPage(
         fluidRow(
           column(
             width = 12,
-            div(
-              style = "display: flex; justify-content: center; align-items: center; height: 80vh;", # Center horizontally and vertically
-              box(
-                title = tagList(div("Plan Your Trip", style = "font-weight: bold; text-align: center; width: 100%;")),
-                width = 8,
-                solidHeader = TRUE,
-                status = "primary",
-                textInput("location", "Your Location:", placeholder = "Enter your current location"),
-                textInput("destination", "Travel Destination:", placeholder = "Enter your travel destination"),
-                dateInput("arrival_date", "Start Date of Trip:", min = Sys.Date() - 2, value = Sys.Date(), format = "dd-mm-yyyy"),
-                dateInput("departure_date", "End Date of Trip:", min = Sys.Date() + 1, value = Sys.Date() + 2, format = "dd-mm-yyyy"),
-                numericInput("total_budget", "Total Budget:", value = 1000, min = 1, step = 1),
-                actionButton("goToResults", "Go to Results", class = "btn btn-primary")
-              )
+            box(
+              title = "Plan Your Trip",
+              solidHeader = TRUE,
+              textInput("location", "Your Location:", placeholder = "Enter your location"),
+              textInput("destination", "Travel Destination:", placeholder = "Enter your destination"),
+              dateInput("arrival_date", "Arrival Date:", value = Sys.Date()),
+              dateInput("departure_date", "Departure Date:", value = Sys.Date() + 1),
+              numericInput("total_budget", "Total Budget:", value = 1000, min = 0),
+              actionButton("goToResults", "Go to Results", class = "btn btn-primary")
             )
           )
         )
       ),
       # Results Tab
+      # In ui.R, ensure the Results Tab contains this Overview Section:
+      
       tabItem(
         tabName = "results",
         fluidRow(
-          column(12,
-                 div(style = "text-align: center; position: fixed; bottom: 20px; width: 100%;", actionButton("goToHome", "Go to Home", class = "btn-md btn-primary"))
-          )
-        ),
-        fluidRow(
-          column(9,
-                 uiOutput("overview_section")
+          column(
+            width = 9,
+            wellPanel(
+              h4("Overview"),
+              p(strong("Total Budget:"), textOutput("total_budget_display")),
+              p(strong("Total Expenses:"), textOutput("total_expenses_display")),
+              p(strong("Remaining Budget:"), textOutput("remaining_budget_display")),
+              p(strong("Biggest Spending Category:"), textOutput("biggest_spending_display")),
+              p(strong("Weather Forecast:"), textOutput("weather_display"))
+            )
           ),
-          column(3,
-                 wellPanel(
-                   h4("Expense Tracker"),
-                   numericInput("food", "Food", value = 0, min = 0),
-                   numericInput("transport", "Transport", value = 0, min = 0),
-                   numericInput("accommodation", "Accommodation", value = 0, min = 0),
-                   numericInput("activities", "Activities", value = 0, min = 0),
-                   actionButton("submit_expense", "Submit Expenses")
-                 ),
-                 wellPanel(
-                   h4("Recommendations"),
-                   p("Explore local attractions and activities."),
-                   p("Book a guided tour or enjoy cultural experiences.")
-                 ),
-                 wellPanel(
-                   h4("Travel Insights"),
-                   p("Check the weather in your destination."),
-                   p("Explore visa and entry requirements.")
-                 )
+          column(
+            width = 3,
+            wellPanel(
+              h4("Recommendations"),
+              p("Explore local attractions and activities."),
+              p("Book a guided tour or enjoy cultural experiences.")
+            ),
+            wellPanel(
+              h4("Travel Insights"),
+              p("Check the weather in your destination."),
+              p("Explore visa and entry requirements.")
+            )
           )
         )
       ),
@@ -111,10 +83,27 @@ ui <- dashboardPage(
         fluidRow(
           box(
             title = "Travel Insights",
-            width = 12,
             solidHeader = TRUE,
             status = "info",
             p("Coming soon: Get detailed travel insights!")
+          )
+        )
+      ),
+      # Expense Tracker Tab
+      tabItem(
+        tabName = "expense_tracker",
+        sidebarLayout(
+          sidebarPanel(
+            textInput("item", "Enter Item Name:", ""),
+            numericInput("budget", "Enter Budget:", value = 0, min = 0),
+            actionButton("submit_expense", "Submit Expense", class = "btn btn-primary"),
+            actionButton("clear_expenses", "Clear All Expenses", class = "btn btn-danger"),
+            hr(),
+            tableOutput("expense_table")
+          ),
+          mainPanel(
+            plotOutput("expense_pie"),
+            downloadButton("download", "Download Expenses")
           )
         )
       )
