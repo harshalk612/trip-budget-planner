@@ -5,6 +5,53 @@ library(DT)
 library(leaflet)
 library(httr)
 library(jsonlite)
+library(gemini.R)
+
+# Function to get country name from city name
+get_country_from_city <- function(city_name) {
+  api_url <- paste0("http://api.geonames.org/searchJSON?q=", 
+                    URLencode(city_name), "&maxRows=1&username=harshalk")
+  response <- GET(api_url)
+  if (status_code(response) == 200) {
+    data <- fromJSON(content(response, "text"))
+    if (length(data$geonames) > 0) {
+      return(data$geonames$countryName)
+    } else {
+      return("City not found.")
+    }
+  } else {
+    return("API request failed.")
+  }
+}
+
+# Function to get currency code based on country name
+get_currency_code <- function(country_name) {
+  api_url <- paste0("https://restcountries.com/v3.1/name/", URLencode(country_name))
+  response <- GET(api_url)
+  if (status_code(response) == 200) {
+    data <- fromJSON(content(response, "text"))
+    currency_code <- names(data$currencies)[1]
+    return(currency_code)
+  } else {
+    return("Invalid country or API request failed.")
+  }
+}
+
+# Function to get exchange rate for the currency code
+get_exchange_rate <- function(base_currency, target_currency) {
+  api_url <- paste0("https://v6.exchangerate-api.com/v6/740bc68dfd27b836ad0c92b3/latest/", base_currency)
+  response <- GET(api_url)
+  if (status_code(response) == 200) {
+    data <- fromJSON(content(response, "text"))
+    if (target_currency %in% names(data$conversion_rates)) {
+      return(data$conversion_rates[[target_currency]])
+    } else {
+      return("Exchange rate not available for this currency.")
+    }
+  } else {
+    return("Exchange rate API request failed.")
+  }
+}
 
 # Sample list of IATA codes and their city names
 iata_codes <- data.frame(
@@ -76,6 +123,67 @@ fetch_hotels <- function(iata_code) {
 
 # Define Server
 server <- function(input, output, session) {
+  
+  # Reactive value to store expenses
+  expenses <- reactiveVal(data.frame(Item = character(), Category = character(), Amount = numeric(), stringsAsFactors = FALSE))
+  
+  # Reactive value to store weather data
+  weather_data <- reactiveVal(NULL)
+  
+  # Reactive value to store hotels data
+  hotels <- reactiveVal(data.frame()) 
+  
+  # Define reactive values for the converted amount and display text
+  converted_amount <- reactiveVal(NULL)
+  converted_amount_display <- reactiveVal(NULL)
+  
+  # Handle "Go to Results" button
+  observeEvent(input$goToResults, {
+    # Get country names for both cities
+    country1 <- get_country_from_city(input$location)
+    country2 <- get_country_from_city(input$destination)
+    
+    # Get currency codes for both countries
+    currency1 <- get_currency_code(country1)
+    currency2 <- get_currency_code(country2)
+    
+    # Get exchange rate between the two currencies
+    exchange_rate <- get_exchange_rate(currency1, currency2)
+    
+    if (currency1 != "Invalid country or API request failed." && 
+        currency2 != "Invalid country or API request failed." && 
+        exchange_rate != "Exchange rate API request failed.") {
+      
+      # Display converted amount
+      converted_amount_value <- input$native_budget * as.numeric(exchange_rate)
+      
+      # Update the reactive values
+      converted_amount(converted_amount_value)
+      converted_amount_display(paste(formatC(converted_amount_value, format = "f", digits = 0), currency2))
+      
+      # Update the UI with exchange details
+      output$native_amount_display <- renderText({
+        paste(input$native_budget, currency1)
+      })
+      
+      output$converted_amount_display <- renderText({
+        converted_amount_display()
+      })
+      
+    } else {
+      showModal(
+        modalDialog(
+          title = "Error",
+          "Unable to fetch currency or exchange rate data. Please check the entered locations.",
+          easyClose = TRUE
+        )
+      )
+    }
+  })
+
+  
+  
+  
   # Reactive value to store expenses
   expenses <- reactiveVal(data.frame(Item = character(), Category = character(), Amount = numeric(), stringsAsFactors = FALSE))
   
@@ -86,39 +194,41 @@ server <- function(input, output, session) {
   hotels <- reactiveVal(data.frame()) 
   
   # Classification logic for items
+  setAPI("AIzaSyAwvmQJ9TzYWPrCV1gGbYG1k0YtayIEfIQ")
+  
+  # Classification logic using gemini
   classify_item <- function(item) {
-    keywords <- list(
-      Food = c("pizza", "burger", "groceries", "coffee"),
-      Accommodation = c("hotel", "hostel", "stay", "rent"),
-      Travel = c("flight", "taxi", "bus", "train"),
-      Luxury = c("watch", "jewelry", "vacation", "designer")
-    )
-    for (category in names(keywords)) {
-      if (any(grepl(paste(keywords[[category]], collapse = "|"), tolower(item)))) {
-        return(category)
-      }
-    }
-    return("Other")
+    # Use gemini to classify the item
+    category_save <- gemini(paste("There are some categories: Food, Luxury, Travel, Accommodation. Categorize", item, "into one category while travelling"))
+    # Clean the output by removing any newline characters
+    category_save <- gsub("\n", "", category_save)
+    return(category_save)
   }
   
-  # Submit new expense
+  # Shiny observeEvent for submitting new expenses
   observeEvent(input$submit_expense, {
     req(input$item, input$budget)
+    
     if (input$budget <= 0) {
       showNotification("Please provide a valid budget.", type = "error")
       return()
     }
+    
+    # Categorize the item using gemini
     category <- classify_item(input$item)
+    
+    # Create a new expense data frame
     new_expense <- data.frame(
       Item = input$item,
       Category = category,
       Amount = input$budget,
       stringsAsFactors = FALSE
     )
+    
+    # Update the expenses data frame
     updated_expenses <- rbind(expenses(), new_expense)
     expenses(updated_expenses)
   })
-  
   # Clear all expenses
   observeEvent(input$clear_expenses, {
     expenses(data.frame(Item = character(), Category = character(), Amount = numeric(), stringsAsFactors = FALSE))
@@ -132,20 +242,25 @@ server <- function(input, output, session) {
   
   # Reactive for remaining budget
   remaining_budget <- reactive({
-    req(input$total_budget)
-    input$total_budget - total_expenses()
+    req(converted_amount())  # Ensure converted_amount is available
+    converted_amount() - total_expenses()  # Use the converted amount instead of native_budget
   })
   
+  
   # Reactive for biggest spending category
+  # Reactive function to determine the biggest spending category
   biggest_spending_category <- reactive({
-    expense_data <- expenses()
+    expense_data <- expenses()  # Get the current expenses data
     if (nrow(expense_data) > 0) {
+      # Calculate the total spending per category
       category_totals <- aggregate(Amount ~ Category, data = expense_data, sum)
+      # Find the category with the maximum total amount
       category_totals$Category[which.max(category_totals$Amount)]
     } else {
-      "None"
+      "None"  # Return "None" if there are no expenses
     }
   })
+  
   
   # Handle "Go to Results" button
   observeEvent(input$goToResults, {
@@ -182,14 +297,15 @@ server <- function(input, output, session) {
   
   # Display Total Budget
   output$total_budget_display <- renderText({
-    req(input$total_budget)
-    paste("$", formatC(input$total_budget, format = "f", digits = 0, big.mark = ","))
+    req(input$native_budget)
+    paste(formatC(converted_amount(), format = "f", digits = 0, big.mark = ","))
   })
+  
   
   # Display Total Expenses
   output$total_expenses_display <- renderText({
     total_exp <- total_expenses()
-    paste("$", formatC(total_exp, format = "f", digits = 0, big.mark = ","))
+    paste(formatC(total_exp, format = "f", digits = 0, big.mark = ","))
   })
   
   # Display Remaining Budget
@@ -198,7 +314,7 @@ server <- function(input, output, session) {
     if (remaining < 0) {
       "Over Budget!"
     } else {
-      paste("$", formatC(remaining, format = "f", digits = 0, big.mark = ","))
+      paste(formatC(remaining, format = "f", digits = 0, big.mark = ","))
     }
   })
   
@@ -280,4 +396,126 @@ server <- function(input, output, session) {
     req(nrow(hotels()) > 0) # Ensure there is data to display
     hotels()
   })
+  # Reactive to monitor remaining budget
+  observe({
+    remaining <- remaining_budget()  # Replace with your logic to calculate remaining budget
+    if (remaining < 0) {
+      # Show modal dialog when out of budget
+      showModal(modalDialog(
+        title = "Out of Budget!",
+        "Do you want us to recommend changes in your budget?",
+        footer = tagList(
+          modalButton("No"),  # Button to dismiss the dialog
+          actionButton("yes_recommendations", "Yes", class = "btn-primary")  # Button to trigger recommendations
+        )
+      ))
+    }
+  })
+  
+  # Handle the "Yes" button click to show recommendations
+  observeEvent(input$yes_recommendations, {
+    removeModal()  # Close the first modal
+    
+    # Show recommendations modal
+    showModal(modalDialog(
+      title = "Budget Recommendations",
+      tagList(
+        # Recommendations UI
+        h4("Suggested Adjustments:"),
+        tabsetPanel(
+          tabPanel("Spending Breakdown", plotOutput("spending_bar_chart")),
+          tabPanel("Cheaper Accommodation", leafletOutput("cheap_accommodation_map", height = "400px")),
+          tabPanel("Cheaper Places to Visit", leafletOutput("cheap_destinations_map", height = "400px")),
+          tabPanel("Cheaper Transport", dataTableOutput("cheap_transport_table"))
+        )
+      ),
+      easyClose = TRUE,
+      footer = modalButton("Close")  # Close button for recommendations modal
+    ))
+  })
+  
+  # Render spending breakdown chart 
+  output$spending_bar_chart <- renderPlot({
+    # Fetch the current expenses data
+    spending_data <- expenses() 
+    
+    # Check if there are expenses recorded
+    if (nrow(spending_data) > 0) {
+      # Calculate the total spending per category
+      category_totals <- aggregate(Amount ~ Category, data = spending_data, sum)
+      
+      # Identify the largest spending category
+      largest_category <- category_totals$Category[which.max(category_totals$Amount)]
+      
+      # Create the bar chart
+      ggplot(category_totals, aes(x = Category, y = Amount, fill = Category == largest_category)) +
+        geom_bar(stat = "identity") +
+        scale_fill_manual(values = c("grey", "blue"), labels = c("Other", "Largest")) +
+        labs(title = "Spending by Category", x = "Category", y = "Amount") +
+        theme_minimal() +
+        theme(legend.position = "none")  # Remove the legend if not needed
+    } else {
+      # Placeholder plot when no data is available
+      ggplot() +
+        labs(title = "No Spending Data Available", x = "Category", y = "Amount") +
+        theme_minimal()
+    }
+  })
+  
+  
+  # Render cheaper accommodation map
+  output$cheap_accommodation_map <- renderLeaflet({
+    # Example data: Budget hotels in Paris
+    hotels <- data.frame(
+      Name = c("Hôtel des Arts", "Hôtel Joke", "Hôtel Keppler"),
+      Latitude = c(48.8867, 48.8841, 48.8688),
+      Longitude = c(2.3387, 2.3319, 2.2966),
+      Price = c(80, 100, 120)
+    )
+    
+    leaflet(hotels) %>%
+      addTiles() %>%
+      addCircleMarkers(
+        ~Longitude, ~Latitude,
+        label = ~paste(Name, "", Price),
+        popup = ~paste("<b>", Name, "</b><br>Price: ", Price),
+        color = "blue", radius = 5, fillOpacity = 0.7
+      )
+  })
+  
+  
+  # Render cheaper destinations map
+  output$cheap_destinations_map <- renderLeaflet({
+    # Example data: Free or low-cost attractions in Paris
+    attractions <- data.frame(
+      Name = c("Père Lachaise Cemetery", "Canal Saint-Martin", "Parc des Buttes-Chaumont"),
+      Latitude = c(48.8619, 48.8687, 48.8803),
+      Longitude = c(2.3933, 2.3662, 2.3827)
+    )
+    
+    leaflet(attractions) %>%
+      addTiles() %>%
+      addMarkers(
+        ~Longitude, ~Latitude,
+        label = ~Name,
+        popup = ~paste("<b>", Name, "</b><br>A wonderful place to explore!")
+      )
+  })
+  
+  # Render cheaper transport table
+  output$cheap_transport_table <- renderDataTable({
+    # Example data: Cheaper transport options in Paris
+    transport <- data.frame(
+      Mode = c("Metro", "Bus", "Bicycle Rental"),
+      Price = c(2.10, 2.00, 5.00),  # Prices in Euros
+      Availability = c("High", "High", "Medium")
+    )
+    
+    datatable(
+      transport,
+      colnames = c("Transport Mode", "Cost (EUR)", "Availability"),
+      options = list(pageLength = 5, autoWidth = TRUE)
+    )
+  })
+  
 }

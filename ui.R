@@ -14,25 +14,25 @@ ui <- dashboardPage(
     titleWidth = 270
   ),
   dashboardSidebar(
-    minified = TRUE, collapsed = TRUE,
+    minified = TRUE, collapsed = TRUE, 
     width = 270,
     sidebarMenu(
       id = "sidebarMenu",
       menuItem("Home", tabName = "home", icon = icon("home")),
       menuItem("Results", tabName = "results", icon = icon("chart-bar")),
       menuItem("Insights", tabName = "insights", icon = icon("lightbulb")),
-      menuItem("Hotels", tabName = "hotels", icon = icon("hotel")) # Adding Hotels tab
+      menuItem("Hotels", tabName = "hotels", icon = icon("hotel")),
+      menuItem("Recommendations", tabName = "recommendations", icon = icon("lightbulb"))
     )
   ),
   dashboardBody(
     tabItems(
-      # Home Tab
       tabItem(
         tabName = "home",
         fluidRow(
           column(
-            width = 12, # Content width
-            offset = 3, # Center the content by adding an offset
+            width = 12,
+            offset = 3,
             box(
               title = "Plan Your Trip",
               solidHeader = TRUE,
@@ -40,13 +40,14 @@ ui <- dashboardPage(
               textInput("destination", "Travel Destination:", placeholder = "Enter your destination"),
               dateInput("arrival_date", "Arrival Date:", value = Sys.Date()),
               dateInput("departure_date", "Departure Date:", value = Sys.Date() + 1),
-              numericInput("total_budget", "Total Budget:", value = 1000, min = 0),
+              numericInput("native_budget", "Total Budget (Native Currency):", value = 1000, min = 0),
+              # textInput("native_currency", "Native Currency Code (e.g., USD, EUR):", value = "USD"),
+              # numericInput("native_amount", "Amount in Native Currency:", value = 1000, min = 0),
               actionButton("goToResults", "Go to Results", class = "btn btn-primary")
             )
           )
         )
       ),
-      # Results Tab (including Expense Tracker inside it)
       tabItem(
         tabName = "results",
         fluidRow(
@@ -64,6 +65,13 @@ ui <- dashboardPage(
           column(
             width = 3,
             wellPanel(
+              h4("Currency Conversion"),
+              p("Native Currency Amount:"),
+              textOutput("native_amount_display"),
+              p("Converted Amount in Destination Currency:"),
+              textOutput("converted_amount_display")
+            ),
+            wellPanel(
               h4("Recommendations"),
               p("Explore local attractions and activities."),
               p("Book a guided tour or enjoy cultural experiences.")
@@ -73,9 +81,8 @@ ui <- dashboardPage(
               p("Check the weather in your destination."),
               p("Explore visa and entry requirements.")
             )
-          )
-        ),
-        # Integrating Expense Tracker in the Results Tab
+            )
+          ),
         fluidRow(
           column(
             width = 12,
@@ -99,7 +106,6 @@ ui <- dashboardPage(
           )
         )
       ),
-      # Insights Tab
       tabItem(
         tabName = "insights",
         fluidRow(
@@ -111,7 +117,6 @@ ui <- dashboardPage(
           )
         )
       ),
-      # Hotels Tab
       tabItem(
         tabName = "hotels",
         fluidRow(
@@ -131,9 +136,27 @@ ui <- dashboardPage(
             DT::dataTableOutput("hotel_table")
           )
         )
+      ),
+      tabItem(
+        tabName = "recommendations",
+        fluidRow(
+          box(
+            title = "Spending Breakdown",
+            width = 12,
+            plotOutput("spending_bar_chart", height = "400px")
+          ),
+          box(
+            title = "Recommendations",
+            width = 12,
+            tabsetPanel(
+              tabPanel("Cheaper Accommodation", leafletOutput("cheap_accommodation_map", height = "400px")),
+              tabPanel("Cheaper Places to Visit", leafletOutput("cheap_destinations_map", height = "400px")),
+              tabPanel("Cheaper Transport", dataTableOutput("cheap_transport_table"))
+            )
+          )
+        )
       )
-    )
-  ),
-  title = "Budget Trip Planner",
+      )
+    ),
   options = list(sidebarExpandOnHover = TRUE)
 )
