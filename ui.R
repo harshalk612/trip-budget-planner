@@ -3,6 +3,7 @@ library(shinydashboard)
 library(shinydashboardPlus)
 library(DT)
 library(leaflet)
+library(plotly)
 
 # Define the UI
 ui <- dashboardPage(
@@ -59,7 +60,7 @@ ui <- dashboardPage(
               p(strong("Total Expenses:"), textOutput("total_expenses_display")),
               p(strong("Remaining Budget:"), textOutput("remaining_budget_display")),
               p(strong("Biggest Spending Category:"), textOutput("biggest_spending_display")),
-              p(strong("Weather Forecast:"), textOutput("weather_display"))
+              p(strong("Weather Forecast:"), textOutput("weather_display"), plotlyOutput("temp_forecast"))
             )
           ),
           column(
