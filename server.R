@@ -6,6 +6,8 @@ library(leaflet)
 library(httr)
 library(jsonlite)
 library(gemini.R)
+library(tidygeocoder)
+library(plotly)
 
 # Function to get country name from city name
 get_country_from_city <- function(city_name) {
@@ -121,6 +123,34 @@ fetch_hotels <- function(iata_code) {
   }
 }
 
+# Function to get coordinates
+get_coordinates_from_city <- function(city_name) {
+  city_name <- data.frame(name = city_name)
+  location <- geocode(city_name, address = name, method = "osm")
+  lat <- location$lat
+  long <- location$long
+  
+  return(c(lat, long))
+}
+
+# Function to get temperature forecast from coords
+get_temp_from_coords <- function(lat, long, start_date, end_date) {
+  # Fetch weather data
+  url <- paste0("https://api.open-meteo.com/v1/forecast?latitude=", 
+                lat, "&longitude=", long, 
+                "&daily=apparent_temperature_max,apparent_temperature_min&timezone=auto&start_date=", start_date, "&end_date=", end_date)
+  response <- GET(url)
+  
+  # Check if the response is successful
+  if (status_code(response) == 200) {
+    # Parse JSON data
+    data <- fromJSON(content(response, "text"))
+    return(data)
+  } else {
+    return(NULL)
+  }
+}
+
 # Define Server
 server <- function(input, output, session) {
   
@@ -179,10 +209,65 @@ server <- function(input, output, session) {
         )
       )
     }
+    
+    latitude <- get_coordinates_from_city(input$destination)[1]
+    longitude <- get_coordinates_from_city(input$destination)[2]
+    
+    start_date <- input$arrival_date
+    end_date <- input$arrival_date + 6
+    temp_json <- get_temp_from_coords(latitude, longitude, start_date, end_date)
+    
+    if (!is.null(temp_json)) {
+      # Prepare the data frame
+      df <- data.frame(
+        Date = as.Date(temp_json$daily$time),
+        Temperature_Max = temp_json$daily$apparent_temperature_max,
+        Temperature_Min = temp_json$daily$apparent_temperature_min
+      )
+      
+      # Create a unified hover text column
+      df$hover_text <- paste0(
+        "Date: ", df$Date, "<br>",
+        "Max Temperature: ", df$Temperature_Max, "°C<br>",
+        "Min Temperature: ", df$Temperature_Min, "°C"
+      )
+      
+      # Plot using plotly
+      output$temp_forecast<- renderPlotly({plot_ly(data = df, x = ~Date, y = ~Temperature_Max, type = "scatter", mode = "lines+markers",
+                                                   name = "Max Temperature", line = list(color = "blue"), hoverinfo = "none") %>%
+          add_trace(y = ~Temperature_Min, name = "Min Temperature", mode = "lines+markers",
+                    line = list(color = "purple"), hoverinfo = "none") %>%
+          add_trace(x = ~Date, y = ~Temperature_Max, type = "scatter", mode = "lines",
+                    name = "", text = ~hover_text, hoverinfo = "text", showlegend = FALSE,
+                    line = list(color = "rgba(0,0,0,0)")) %>%  # Invisible trace for hover
+          layout(
+            title = list(
+              text = "Weather Forecast",
+              font = list(
+                color = "black",    # Font color
+                weight = 'bold'     # Make the title bold
+              )
+            ),
+            xaxis = list(title = "Date"),
+            plot_bgcolor = 'rgba(0, 0, 0, 0)',  # Transparent background for the plot area
+            paper_bgcolor = 'rgba(0, 0, 0, 0)',
+            yaxis = list(title = "Temperature (°C)",
+                         zeroline = FALSE),
+            hovermode = "x unified"
+          )
+      })
+      
+    } else {
+      showModal(
+        modalDialog(
+          title = "Error",
+          "Please Enter the Arrival date less than 9 days from today due to API Limits.",
+          easyClose = TRUE
+        )
+      )
+    }
+    
   })
-
-  
-  
   
   # Reactive value to store expenses
   expenses <- reactiveVal(data.frame(Item = character(), Category = character(), Amount = numeric(), stringsAsFactors = FALSE))
@@ -563,7 +648,7 @@ server <- function(input, output, session) {
     })
   })
   
- 
+  
   # Render cheaper transport options dynamically
   output$cheap_transport_table <- renderDataTable({
     req(input$destination)
@@ -609,6 +694,4 @@ server <- function(input, output, session) {
       )
     })
   })
-  
-  
 }
