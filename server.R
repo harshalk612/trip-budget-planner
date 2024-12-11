@@ -362,6 +362,59 @@ server <- function(input, output, session) {
       write.csv(expenses(), file, row.names = FALSE)
     }
   )
+  output$overview_recommendations <- renderUI({
+    req(input$destination, input$arrival_date, input$departure_date)
+    location <- input$destination
+    arrival_str <- as.character(input$arrival_date)
+    departure_str <- as.character(input$departure_date)
+    
+    # Create the prompt for gemini
+    prompt <- paste("I will be travelling from", arrival_str, "to", departure_str, 
+                    "suggest me best places to visit in", location, 
+                    "and the weather during these days. Strictly keep the output to: (place name) - (its historic/artistic importance), (why you should visit it), that's it nothing else.")
+    
+    tryCatch({
+      # Fetch recommendations from gemini
+      recommendations <- gemini(prompt)
+      
+      # Split recommendations into lines
+      recommendations_list <- unlist(strsplit(recommendations, "\\)\\s*"))
+      
+      # Limit to two recommendations
+      recommendations_list <- recommendations_list[1:2]
+      
+      # Generate HTML output for the first two recommendations
+      html_output <- lapply(recommendations_list, function(item) {
+        if (nchar(trimws(item)) > 0) {
+          # Split into place name and description
+          split_item <- unlist(strsplit(item, "-"))
+          if (length(split_item) == 2) {
+            tags$div(
+              tags$b(trimws(split_item[1])),  # Bold place name
+              tags$br(),
+              tags$i(trimws(split_item[2])),  # Italic description
+              tags$br(), tags$br()  # Add extra spacing
+            )
+          }
+        }
+      })
+      
+      # Add "More Recommendations" link
+      html_output <- append(
+        html_output,
+        list(tags$div(
+          tags$a("More Recommendations", href = "#", onclick = "Shiny.setInputValue('redirect_to_recommendations', true)")
+        ))
+      )
+      
+      # Return as HTML
+      do.call(tagList, html_output)
+      
+    }, error = function(e) {
+      tags$div("Unable to fetch recommendations at this time. Please try again later.")
+    })
+  })
+  
   
   hotels <- reactiveVal(data.frame())
   
@@ -382,7 +435,9 @@ server <- function(input, output, session) {
       showNotification(paste("Error:", e$message), type = "error")
     })
   })
-  
+  observeEvent(input$redirect_to_recommendations, {
+    updateTabItems(session, "sidebarMenu", selected = "recommendations")
+  })
   # Render Leaflet map
   output$hotel_map <- renderLeaflet({
     req(nrow(hotels()) > 0) # Ensure there is data to display
@@ -464,58 +519,96 @@ server <- function(input, output, session) {
   
   
   # Render cheaper accommodation map
+  
+  
+  # Render cheaper accommodation map dynamically
   output$cheap_accommodation_map <- renderLeaflet({
-    # Example data: Budget hotels in Paris
-    hotels <- data.frame(
-      Name = c("Hôtel des Arts", "Hôtel Joke", "Hôtel Keppler"),
-      Latitude = c(48.8867, 48.8841, 48.8688),
-      Longitude = c(2.3387, 2.3319, 2.2966),
-      Price = c(80, 100, 120)
+    req(input$destination)
+    
+    # Define the prompt for Gemini
+    accommodation_prompt <- paste(
+      "Provide a list of affordable accommodations in",
+      input$destination,
+      "including their name, latitude, longitude, and price. Format the response as follows:",
+      "(Hotel Name) - (latitude), (longitude), (price in local currency)."
     )
     
-    leaflet(hotels) %>%
-      addTiles() %>%
-      addCircleMarkers(
-        ~Longitude, ~Latitude,
-        label = ~paste(Name, "", Price),
-        popup = ~paste("<b>", Name, "</b><br>Price: ", Price),
-        color = "blue", radius = 5, fillOpacity = 0.7
-      )
+    tryCatch({
+      # Fetch data from Gemini
+      response <- gemini(accommodation_prompt)
+      
+      # Parse the response into a data frame
+      accommodations <- do.call(rbind, lapply(strsplit(response, "\n"), function(line) {
+        parts <- unlist(strsplit(line, "-|,"))
+        data.frame(
+          Name = trimws(parts[1]),
+          Latitude = as.numeric(trimws(parts[2])),
+          Longitude = as.numeric(trimws(parts[3])),
+          Price = as.numeric(trimws(parts[4]))
+        )
+      }))
+      
+      # Plot accommodations on Leaflet map
+      leaflet(accommodations) %>%
+        addTiles() %>%
+        addCircleMarkers(
+          ~Longitude, ~Latitude,
+          label = ~paste(Name, "Price:", Price),
+          popup = ~paste("<b>", Name, "</b><br>Price: ", Price),
+          color = "blue", radius = 5, fillOpacity = 0.7
+        )
+    }, error = function(e) {
+      # Fallback: Display a blank map with an error message
+      leaflet() %>% addTiles() %>% addPopups(0, 0, "Error fetching data. Please try again.")
+    })
   })
   
-  
-  # Render cheaper destinations map
-  output$cheap_destinations_map <- renderLeaflet({
-    # Example data: Free or low-cost attractions in Paris
-    attractions <- data.frame(
-      Name = c("Père Lachaise Cemetery", "Canal Saint-Martin", "Parc des Buttes-Chaumont"),
-      Latitude = c(48.8619, 48.8687, 48.8803),
-      Longitude = c(2.3933, 2.3662, 2.3827)
-    )
-    
-    leaflet(attractions) %>%
-      addTiles() %>%
-      addMarkers(
-        ~Longitude, ~Latitude,
-        label = ~Name,
-        popup = ~paste("<b>", Name, "</b><br>A wonderful place to explore!")
-      )
-  })
-  
-  # Render cheaper transport table
+ 
+  # Render cheaper transport options dynamically
   output$cheap_transport_table <- renderDataTable({
-    # Example data: Cheaper transport options in Paris
-    transport <- data.frame(
-      Mode = c("Metro", "Bus", "Bicycle Rental"),
-      Price = c(2.10, 2.00, 5.00),  # Prices in Euros
-      Availability = c("High", "High", "Medium")
+    req(input$destination)
+    
+    # Define the prompt for Gemini
+    transport_prompt <- paste(
+      "Provide a list of atleast three cheap transport options in",
+      input$destination,
+      "including their mode, price (in local currency), and availability. Format the response as follows:",
+      "(Transport Mode) - (Price), (Availability)."
     )
     
-    datatable(
-      transport,
-      colnames = c("Transport Mode", "Cost (EUR)", "Availability"),
-      options = list(pageLength = 5, autoWidth = TRUE)
-    )
+    tryCatch({
+      # Fetch data from Gemini
+      response <- gemini(transport_prompt)
+      
+      # Parse the response into a data frame
+      transport <- do.call(rbind, lapply(strsplit(response, "\n"), function(line) {
+        parts <- unlist(strsplit(line, "-|,"))
+        data.frame(
+          Mode = trimws(parts[1]),
+          Price = as.numeric(trimws(parts[2])),
+          Availability = trimws(parts[3])
+        )
+      }))
+      
+      # Render transport options as a table
+      datatable(
+        transport,
+        colnames = c("Transport Mode", "Cost (Local Currency)", "Availability"),
+        options = list(pageLength = 5, autoWidth = TRUE)
+      )
+    }, error = function(e) {
+      # Fallback: Return an empty table with an error message
+      datatable(
+        data.frame(
+          Mode = "Error fetching data",
+          Price = NA,
+          Availability = NA
+        ),
+        colnames = c("Transport Mode", "Cost (Local Currency)", "Availability"),
+        options = list(pageLength = 5, autoWidth = TRUE)
+      )
+    })
   })
+  
   
 }

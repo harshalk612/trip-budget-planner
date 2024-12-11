@@ -73,13 +73,7 @@ ui <- dashboardPage(
             ),
             wellPanel(
               h4("Recommendations"),
-              p("Explore local attractions and activities."),
-              p("Book a guided tour or enjoy cultural experiences.")
-            ),
-            wellPanel(
-              h4("Travel Insights"),
-              p("Check the weather in your destination."),
-              p("Explore visa and entry requirements.")
+              uiOutput("overview_recommendations")
             )
             )
           ),
