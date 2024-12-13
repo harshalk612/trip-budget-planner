@@ -5,8 +5,8 @@ library(DT)
 library(leaflet)
 library(plotly)
 
-# Define the UI
 ui <- dashboardPage(
+  skin = "black",
   dashboardHeader(
     title = span(
       icon("plane-departure"),
@@ -15,13 +15,13 @@ ui <- dashboardPage(
     titleWidth = 270
   ),
   dashboardSidebar(
-    minified = TRUE, collapsed = TRUE, 
+    minified = TRUE, collapsed = TRUE,
     width = 270,
     sidebarMenu(
       id = "sidebarMenu",
       menuItem("Home", tabName = "home", icon = icon("home")),
       menuItem("Results", tabName = "results", icon = icon("chart-bar")),
-      menuItem("Insights", tabName = "insights", icon = icon("lightbulb")),
+      menuItem("Smart Itinerary Planner", tabName = "itinerary", icon = icon("wand-magic-sparkles")),
       menuItem("Hotels", tabName = "hotels", icon = icon("hotel")),
       menuItem("Recommendations", tabName = "recommendations", icon = icon("lightbulb"))
     )
@@ -39,12 +39,12 @@ ui <- dashboardPage(
               solidHeader = TRUE,
               textInput("location", "Your Location:", placeholder = "Enter your location"),
               textInput("destination", "Travel Destination:", placeholder = "Enter your destination"),
-              dateInput("arrival_date", "Arrival Date:", value = Sys.Date()),
-              dateInput("departure_date", "Departure Date:", value = Sys.Date() + 1),
+              dateInput("arrival_date", "Arrival Date:", value = Sys.Date(), min = Sys.Date()),
+              dateInput("departure_date", "Departure Date:", value = Sys.Date() + 1, min = Sys.Date() + 1),
               numericInput("native_budget", "Total Budget (Native Currency):", value = 1000, min = 0),
               # textInput("native_currency", "Native Currency Code (e.g., USD, EUR):", value = "USD"),
               # numericInput("native_amount", "Amount in Native Currency:", value = 1000, min = 0),
-              actionButton("goToResults", "Go to Results", class = "btn btn-primary")
+              actionButton("goToResults", strong("Go to Results"), class = "btn btn-secondary")
             )
           )
         )
@@ -87,7 +87,7 @@ ui <- dashboardPage(
                 sidebarPanel(
                   textInput("item", "Enter Item Name:", ""),
                   numericInput("budget", "Enter Budget:", value = 0, min = 0),
-                  actionButton("submit_expense", "Submit Expense", class = "btn btn-primary"),
+                  actionButton("submit_expense", "Submit Expense", class = "btn btn-secondary"),
                   actionButton("clear_expenses", "Clear All Expenses", class = "btn btn-danger"),
                   hr(),
                   tableOutput("expense_table")
@@ -102,13 +102,25 @@ ui <- dashboardPage(
         )
       ),
       tabItem(
-        tabName = "insights",
+        tabName = "itinerary",
         fluidRow(
-          box(
-            title = "Travel Insights",
-            solidHeader = TRUE,
-            status = "info",
-            p("Coming soon: Get detailed travel insights!")
+          column(
+            width = 4,
+            box(
+              title = "Generate Itinerary",
+              solidHeader = TRUE,
+              status = "navy",
+              actionButton("generate_itinerary", "Generate Itinerary", class = "btn btn-secondary")
+            )
+          ),
+          column(
+            width = 8,
+            box(
+              title = "Generated Itinerary",
+              solidHeader = TRUE,
+              status = "info",
+              uiOutput("formatted_itinerary")
+            )
           )
         )
       ),
@@ -121,7 +133,7 @@ ui <- dashboardPage(
               title = "Find Hotels",
               solidHeader = TRUE,
               p("Hotels will be searched using your travel destination."),
-              actionButton("update_hotels", "Search Hotels", class = "btn btn-primary")
+              actionButton("update_hotels", "Search Hotels", class = "btn btn-secondary")
             )
           ),
           column(
@@ -135,6 +147,7 @@ ui <- dashboardPage(
       tabItem(
         tabName = "recommendations",
         fluidRow(
+          
           box(
             title = "Spending Breakdown",
             width = 12,
@@ -144,8 +157,7 @@ ui <- dashboardPage(
             title = "Recommendations",
             width = 12,
             tabsetPanel(
-              tabPanel("Cheaper Accommodation", leafletOutput("cheap_accommodation_map", height = "400px")),
-              tabPanel("Cheaper Places to Visit", leafletOutput("cheap_destinations_map", height = "400px")),
+              tabPanel("Places to Visit", uiOutput("cheap_destinations_map")),
               tabPanel("Cheaper Transport", dataTableOutput("cheap_transport_table"))
             )
           )
